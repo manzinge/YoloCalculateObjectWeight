@@ -1,0 +1,4 @@
+darknetpy
+Pillow
+matplotlib
+configparser

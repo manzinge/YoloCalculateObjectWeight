@@ -6,11 +6,6 @@ from determineWeight import getEstimatedWeight
 from matplotlib import image, patches, pyplot as plt
 import configparser
 
-imgPath = ''
-rotationLimit = 180
-rotationFolder = "rotationImages/"
-analyseFolder = "analyzeImages/"
-
 class ImgARatio:
     def __init__(self, img, aspectRatio):
         self.img = img
@@ -20,6 +15,14 @@ class ImgABox:
     def __init__(self, img, bbox):
         self.img = img
         self.bbox = bbox
+
+class Settings:
+    def __init__(self, imgPath, rotationLimit, rotationFolder, analyseFolder, saveAnalyzedImages):
+        self.imgPath = imgPath
+        self.rotationLimit = rotationLimit
+        self.rotationFolder = rotationFolder
+        self.analyseFolder = analyseFolder
+        self.saveAnalyzedImages = saveAnalyzedImages
 
 class CameraSettings:
     def __init__(self, focalLength, dist, sensor_height, sensor_width):
@@ -34,31 +37,39 @@ class NeuralNetworkSettings:
         self.config = config
         self.weight = weight
 
+def getConfig():
+    config = configparser.ConfigParser()
+    config.read('config.ini')
+    return config
+
+def getGeneralSettings():
+    Config = getConfig()
+    settings = Settings(Config.get("General",'imgPath'),Config.get("General",'rotationLimit'),Config.get("General",'rotationFolder'),Config.get("General",'analyseFolder'),Config.get("General",'saveAnalyzedImages'))
+    return settings
+
 def getCameraConfigSettings():
-    Config = configparser.ConfigParser()
-    Config.read('config.ini')
+    Config = getConfig()
     settings = CameraSettings(Config.get("Camera",'focalLength'), Config.get("Camera",'distance'), Config.get("Camera",'sensor_height'), Config.get("Camera",'sensor_width'))
     return settings
 
 def getNeuralNetworkSettings():
-    Config = configparser.ConfigParser()
-    Config.read('config.ini')
+    Config = getConfig()
     settings = NeuralNetworkSettings(Config.get("Network",'data'),Config.get("Network",'config'),Config.get("Network",'weight'))
     return settings
 
-def checkFolder():
-    if not os.path.exists(rotationFolder):
-        os.makedirs(rotationFolder)
-    if not os.path.exists(analyseFolder):
-        os.makedirs(analyseFolder)
+def checkFolder(settings):
+    if not os.path.exists(settings.rotationFolder):
+        os.makedirs(settings.rotationFolder)
+    if not os.path.exists(settings.analyseFolder):
+        os.makedirs(settings.analyseFolder)
 
-def createRotatedImages():
-    orgImg = Image.open(imgPath)
-    for i in range(10,rotationLimit,10):
-        print("Rotating Image. Current degree {}/{}".format(i,rotationLimit))
+def createRotatedImages(settings):
+    orgImg = Image.open(settings.imgPath)
+    for i in range(10,int(settings.rotationLimit),10):
+        print("Rotating Image. Current degree {}/{}".format(i,float(settings.rotationLimit)))
         rotated = orgImg.rotate(i)
-        imgName = imgPath.split('/')[-1].split('.')[0] + "-" + str(i) + "R.png"
-        rotated.save(rotationFolder+imgName)
+        imgName = settings.imgPath.split('/')[-1].split('.')[0] + "-" + str(i) + "R.png"
+        rotated.save(settings.rotationFolder+imgName)
         rotated.close()
     orgImg.close()
 
@@ -70,10 +81,9 @@ def setupDetector(networkSettings):
     )
     return detector
 
-def saveImageWithBbox(img, targetbox):
-    plt.clf()
+def saveImageWithBbox(img, targetbox, settings):
     imgPath = os.getcwd() + '/' + img
-    savePath = os.getcwd() + '/' + analyseFolder + img.split('/')[-1]
+    savePath = os.getcwd() + '/' + settings.analyseFolder + img.split('/')[-1]
     img = image.imread(imgPath)
     figure, ax = plt.subplots(1)
     rect = patches.Rectangle((targetbox['left'], targetbox['top']),targetbox['right'] - targetbox['left'], targetbox['bottom'] - targetbox['top'], edgecolor='r', facecolor='None')
@@ -81,9 +91,11 @@ def saveImageWithBbox(img, targetbox):
     ax.add_patch(rect)
     plt.savefig(savePath)
     print("Successfully saved analyzed Image to {}".format(savePath))
+    plt.clf()
+    plt.close()
 
-def getBoundingBoxes(detector):
-    searchPattern = rotationFolder + '*' + imgPath.split('/')[-1].split('.')[0] + "*.png"
+def getBoundingBoxes(detector, settings):
+    searchPattern = settings.rotationFolder + '*' + settings.imgPath.split('/')[-1].split('.')[0] + "*.png"
     bboxes = []
     counter = 1
     for img in glob.glob(searchPattern):
@@ -95,10 +107,9 @@ def getBoundingBoxes(detector):
                     targetbox = boxes[i]
         boxes = ""
         bboxes.append(ImgABox(img, targetbox))
-        saveImageWithBbox(img, targetbox)
+        if settings.saveAnalyzedImages == 'True': 
+            saveImageWithBbox(img, targetbox, settings)
         print("Successfully analyzed picture {}/{}".format(counter, len(glob.glob(searchPattern))))
-        if counter == 15:
-            x = 5
         counter += 1
 
     return bboxes
@@ -114,12 +125,13 @@ def getAspectRatios(bboxes):
 
 
 def main():
+    settings = getGeneralSettings()
     cameraConfig = getCameraConfigSettings()
     neuralNetworkConfig = getNeuralNetworkSettings()
     detector = setupDetector(neuralNetworkConfig)
-    checkFolder()
-    # createRotatedImages()
-    bBoxes = getBoundingBoxes(detector)
+    checkFolder(settings)
+    # createRotatedImages(settings)
+    bBoxes = getBoundingBoxes(detector,settings)
     aspectRatios = getAspectRatios(bBoxes)
     bestImg = ImgARatio("Image", 0.000000001)
     for img in aspectRatios:

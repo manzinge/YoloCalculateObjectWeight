@@ -62,14 +62,22 @@ def checkFolder(settings):
         os.makedirs(settings.rotationFolder)
     if not os.path.exists(settings.analyseFolder):
         os.makedirs(settings.analyseFolder)
+    if not os.path.exists("bestCalculations"):
+        os.makedirs("bestCalculations")
 
 def createRotatedImages(settings):
     orgImg = Image.open(settings.imgPath)
+    filename = settings.imgPath.split('/')[-1].split('.')[0]
+    folder = settings.rotationFolder + filename
+    if not os.path.exists(folder):
+            os.makedirs(folder)
+
     for i in range(10,int(settings.rotationLimit),10):
         print("Rotating Image. Current degree {}/{}".format(i,float(settings.rotationLimit)))
         rotated = orgImg.rotate(i)
-        imgName = settings.imgPath.split('/')[-1].split('.')[0] + "-" + str(i) + "R.png"
-        rotated.save(settings.rotationFolder+imgName)
+        imgName = filename +'/' + filename + "-" + str(i) + "R.png"
+        if not os.path.isfile(settings.rotationFolder+imgName):
+            rotated.save(settings.rotationFolder+imgName)
         rotated.close()
     orgImg.close()
 
@@ -83,7 +91,11 @@ def setupDetector(networkSettings):
 
 def saveImageWithBbox(img, targetbox, settings):
     imgPath = os.getcwd() + '/' + img
-    savePath = os.getcwd() + '/' + settings.analyseFolder + img.split('/')[-1]
+    folder = img.split('/')[1]
+    folderPath = os.getcwd() + '/' + settings.analyseFolder + folder
+    if not os.path.exists(folderPath):
+            os.makedirs(folderPath)
+    savePath = os.getcwd() + '/' + settings.analyseFolder + folder + '/' + img.split('/')[-1]
     img = image.imread(imgPath)
     figure, ax = plt.subplots(1)
     rect = patches.Rectangle((targetbox['left'], targetbox['top']),targetbox['right'] - targetbox['left'], targetbox['bottom'] - targetbox['top'], edgecolor='r', facecolor='None')
@@ -95,23 +107,26 @@ def saveImageWithBbox(img, targetbox, settings):
     plt.close()
 
 def getBoundingBoxes(detector, settings):
-    searchPattern = settings.rotationFolder + '*' + settings.imgPath.split('/')[-1].split('.')[0] + "*.png"
+    folder = settings.imgPath.split('/')[-1].split('.')[0]
+    searchPattern = settings.rotationFolder + folder + '/*' + settings.imgPath.split('/')[-1].split('.')[0] + "*.png"
     bboxes = []
     counter = 1
     for img in glob.glob(searchPattern):
         boxes = detector.detect(os.getcwd() + '/' + img)
-        targetbox = boxes[0]
-        if len(boxes) > 1:
-            for i, box in enumerate(boxes):
-                if boxes[i]['prob'] > targetbox['prob']:
-                    targetbox = boxes[i]
-        boxes = ""
-        bboxes.append(ImgABox(img, targetbox))
-        if settings.saveAnalyzedImages == 'True': 
-            saveImageWithBbox(img, targetbox, settings)
-        print("Successfully analyzed picture {}/{}".format(counter, len(glob.glob(searchPattern))))
+        if len(boxes) == 0:
+            continue
+        else:
+            targetbox = boxes[0]
+            if len(boxes) > 1:
+                for i, box in enumerate(boxes):
+                    if boxes[i]['prob'] > targetbox['prob']:
+                        targetbox = boxes[i]
+            boxes = ""
+            bboxes.append(ImgABox(img, targetbox))
+            if settings.saveAnalyzedImages == 'True' and targetbox['prob'] > 0.85: 
+                saveImageWithBbox(img, targetbox, settings)
+            print("Successfully analyzed picture {}/{} with confidence: {}".format(counter, len(glob.glob(searchPattern)), targetbox['prob']))
         counter += 1
-
     return bboxes
 
 def getAspectRatios(bboxes):
@@ -130,16 +145,27 @@ def main():
     neuralNetworkConfig = getNeuralNetworkSettings()
     detector = setupDetector(neuralNetworkConfig)
     checkFolder(settings)
-    # createRotatedImages(settings)
+    createRotatedImages(settings)
     bBoxes = getBoundingBoxes(detector,settings)
     aspectRatios = getAspectRatios(bBoxes)
     bestImg = ImgARatio("Image", 0.000000001)
+    lowestImage = ImgARatio("Image", 10)
     for img in aspectRatios:
         if img.aspectRatio > bestImg.aspectRatio:
             bestImg = img
 
-    print("The best image is : {}, with an Aspect Ratio of : {}".format(bestImg.img, bestImg.aspectRatio))
-    print("Calculating estimated weight of Object!")
-    getEstimatedWeight(detector, os.getcwd() + '/' + bestImg.img, cameraConfig)
+    for img in aspectRatios:
+        if img.aspectRatio < lowestImage.aspectRatio:
+            lowestImage = img
+
+    print("\nFinally:\nThe best image(highest AR) is : {}, with an Aspect Ratio of : {}".format(bestImg.img, bestImg.aspectRatio))
+    print("The best image(lowest AR) is : {}, with an Aspect Ratio of : {}\n".format(lowestImage.img, lowestImage.aspectRatio))
+    highestWeight = getEstimatedWeight(detector, os.getcwd() + '/' + bestImg.img, cameraConfig)
+    lowestWeight = getEstimatedWeight(detector, os.getcwd() + '/' + lowestImage.img, cameraConfig)
+    if highestWeight.height / highestWeight.width > lowestWeight.height / lowestWeight.width:
+        print("Weight ist probably : {} (Alternative : {}".format(highestWeight.weight, lowestWeight.weight))
+    else:
+        print("Weight ist probably : {} (Alternative : {}".format(lowestWeight.weight, highestWeight.weight))
+
 
 main()

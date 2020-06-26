@@ -1,4 +1,5 @@
-darknetpy
 Pillow
 matplotlib
 configparser
+opencv-python
+numpy

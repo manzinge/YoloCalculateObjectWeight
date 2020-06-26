@@ -1,7 +1,7 @@
 from matplotlib import image, patches, pyplot as plt
-from darknetpy.detector import Detector
 from PIL import Image
 from FocalLength import getFocalLength
+from pythonAnalyser import analyseImage
 import math
 
 class EstimatedObject:
@@ -10,28 +10,21 @@ class EstimatedObject:
         self.width = width
         self.weight = weight 
 
-def getEstimatedWeight(detector, imgPath, CameraSettings):
+def getEstimatedWeight(imgPath, CameraSettings, nnconfig):
     plt.clf()
     img_height, img_width = Image.open(imgPath).size
 
-    boxes = detector.detect(imgPath)
-    targetbox = boxes[0]
-    for i, box in enumerate(boxes):
-        if boxes[i]['prob'] > targetbox['prob']:
+    cv2box = analyseImage(nnconfig.names, nnconfig.weight, nnconfig.config, imgPath)
+    targetbox = cv2box[0][0]
+    for i, box in enumerate(cv2box):
+        if cv2box[i][0][4] > targetbox[4]:
             targetbox = boxes[i]
     
     fig,ax = plt.subplots(1)
     ax.imshow(image.imread(imgPath))
 
-    box = targetbox
-    #Get Information of Box
-    l = box['left']
-    t = box['top']
-    b = box['bottom']
-    r = box['right']
-    c = box['class']
-    box_width = b - t
-    box_height = r - l
+    box_width = targetbox[3]
+    box_height = targetbox[2]
 
     if box_width > box_height:
         calc_width, calc_height = box_height, box_width
@@ -47,7 +40,7 @@ def getEstimatedWeight(detector, imgPath, CameraSettings):
 
     # Draw Rectangle in Plot
     rect = patches.Rectangle(
-        (l,t),
+        (targetbox[0],targetbox[1]),
         box_height,
         box_width,
         linewidth = 1,
@@ -59,7 +52,7 @@ def getEstimatedWeight(detector, imgPath, CameraSettings):
     print("Estimated Weight is: {}g\n".format(object_weight))
 
     # Add Rectangle to Plot
-    ax.text(l, t, c, fontsize = 12, bbox = {'facecolor': color, 'pad': 2, 'ec': color})
+    ax.text(targetbox[0], targetbox[1], 'Object', fontsize = 12, bbox = {'facecolor': color, 'pad': 2, 'ec': color})
     ax.add_patch(rect)
     plt.savefig("bestCalculations/" + imgPath.split('/')[-1])
 
